@@ -1,0 +1,6 @@
+{
+"dbhost"  :  "pruebadevops.cluster-ro-cud8qibwfpmb.us-east-1.rds.amazonaws.com",
+"dbname"  : "Prueba",
+"dbuser" : "admin",
+"dbpass"  : "admin123"
+}

@@ -1,0 +1,25 @@
+//Luego de tener la cuenta correctamente enlazada al usuario se ejecutan los siguientes comandos:
+
+
+//Se crea el bucket que tendra los archivos y informacion de despliegue
+aws s3api create-bucket --bucket=pruebaDevops2 --region=us-east-1
+
+
+//Se deben agregar los datos para la conectividad a la cuenta de aws 
+//aws access key id and secret access key
+
+
+
+//Luego de configurado se debe ejecutar el comando que inicia el terraform
+terraform init
+
+
+//Es opcional ejecutar el terraform plan "nos sirve para identificar cual sera el cambio a ejecutar"
+terraform plan
+
+
+//Se debe ejecutar el terraform apply para que se realice el cambio en la cuenta
+terraform apply
+
+
+//Luego de ejecucion se podra evidenciar en la cuenta la infraestructura basica que se desplego

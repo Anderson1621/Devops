@@ -1,0 +1,150 @@
+import groovy.json.JsonOutput
+import groovy.json.JsonSlurper
+import groovy.json.JsonSlurperClassic
+import groovy.json.JsonBuilder
+
+def current_userid_and_group
+
+accessKeyId=""
+secretAccessKey=""
+sessionToken=""
+environment=""
+region=""
+
+pipeline {
+    
+    agent { label 'slaves' }
+    environment {
+        BUILD_USER_ID=getUserId()
+        BUILD_GROUP_ID=getGroupId()
+        TERRAFORM_DOCKER=get_terraform_docker()
+    }
+    options {
+        disableConcurrentBuilds() 
+    }   
+    stages {
+        stage('Build') {
+            steps {
+                //Get Access
+                script {
+                    sh("cd $WORKSPACE/")
+                    PROPS_CONFIG_ENV = readProperties  file: "devops/config-env/master.properties"                    
+                    ACCOUNT = PROPS_CONFIG_ENV["ACCOUNT"]
+                    REGION_TO_DEPLOY = PROPS_CONFIG_ENV["REGION_TO_DEPLOY"]
+                    AVAILABILITY_ZONES = PROPS_CONFIG_ENV["AVAILABILITY_ZONES"]
+                    BUCKET = PROPS_CONFIG_ENV["BUCKET"]
+    
+                    region="${REGION_TO_DEPLOY}"       
+                    sts_token_response = get_sts_assume_role(ACCOUNT)                   
+                    def response_sts = jsonTextToObject(sts_token_response)                    
+                    sessionToken="${response_sts.Credentials.SessionToken}"
+                    accessKeyId="${response_sts.Credentials.AccessKeyId}"
+                    secretAccessKey="${response_sts.Credentials.SecretAccessKey}"
+                    response_sts=null
+                    def propsApp = readProperties  file: 'app.properties'
+                    versionParam = propsApp["version"]                    
+                    
+                }
+                //Install Dependencies & verify
+                script {
+                    ecrLoginSharedServices()
+                    withDockerContainer(image: TERRAFORM_DOCKER , args: '-u 0:0 -e GIT_PYTHON_REFRESH=quiet') {
+                        dir('terraform'){ 
+                            sh("echo [INI] Install dependencies")
+                            sh("sed -i 's/ACCOUNTDEPLOY/${ACCOUNT}/g' $WORKSPACE/Infraestructura/variables.tf")
+                            sh("sed -i 's/pipeline-name/g' $WORKSPACE/Infraestructura/variables.tf")
+                            sh("sed -i 's/terraform.tfstate/${ENVIRONMENT_ID}.tfstate/g' $WORKSPACE/Infraestructura/variables.tf")
+                            sh("chmod +x $WORKSPACE/Infraestructura/install_dependencies.sh")
+                            sh("sh $WORKSPACE/Infraestructura/install_dependencies.sh")                         
+                                                 
+                            sh("echo [END] Install dependencies")                            
+                            echo "Verificando la configuracion"
+                            getConfEnvAWS(region, accessKeyId, secretAccessKey, sessionToken)                            
+                            sh("set ")
+                            sh("echo [INI] Iniciando Terraform") 
+                            sh("rm -R -f .terraform")                 
+                            sh("terraform init")                                                 
+                            sh("echo [END] Iniciando Terraform")
+                            sh("echo [INI] Verificando configuración Terraform")
+                            sh("terraform fmt -write=false")
+                            sh("terraform validate")
+                            sh("echo [END] Verificando configuración Terraform")   
+
+                            echo "Provisionando..."   
+                           
+                        }                                                  
+                    }                    					                                        
+                } 
+            }
+        }       
+
+        stage('Generate Deployment Plan') {                        
+            steps {
+                script {
+                    ecrLoginSharedServices()
+                    withDockerContainer(image: TERRAFORM_DOCKER , args: '-u 0:0 -e GIT_PYTHON_REFRESH=quiet') {
+                        dir('terraform'){                        
+                            sh("echo [INI] Terraform plan")                            
+                            outputParameters=get_parameters()
+                            sh("terraform plan -var='access_key=${AWS_ACCESS_KEY_ID}' -var='secret_key=${AWS_SECRET_ACCESS_KEY}' -var='token=${AWS_SESSION_TOKEN}' -var='region=${REGION_TO_DEPLOY}' -out plan-deploy.out")
+                            sh("terraform show -json plan-deploy.out > $WORKSPACE/Infraestructura/plan-deploy.out.json")
+                            sh("echo [END] Terraform plan")                        
+                            sh("echo [INI] Realizando pruebas unitarias de terraform")                            
+                            sh("pip3 install terraform-compliance")
+                            sh("terraform-compliance --features ../terraform-compliance --planfile $WORKSPACE/Infraestructura/plan-deploy.out.json")                                                                                                                                                                                                         
+                            sh("echo [END] Realizando pruebas unitarias de terraform")                                                                        
+                       
+                        }                
+                    }
+                }
+            }
+        }
+
+        stage('Deployment Plan Review') {           
+            steps {
+                input (message: 'Are you agreee with the deployment plan?', ok: 'Agree!')
+            }
+        }  
+
+        stage('Deploy') {
+                        
+            steps {
+                script {
+                    ecrLoginSharedServices()
+                    withDockerContainer(image: TERRAFORM_DOCKER , args: '-u 0:0 -e GIT_PYTHON_REFRESH=quiet') {
+                        getConfEnvAWS(region, accessKeyId, secretAccessKey, sessionToken)
+                        dir('terraform') {  
+                            outputParameters=get_parameters()                          
+                            sh("echo [INI] Terraform apply")                            
+                            sh("terraform apply -var='access_key=${AWS_ACCESS_KEY_ID}' -var='secret_key=${AWS_SECRET_ACCESS_KEY}' -var='token=${AWS_SESSION_TOKEN}' -var='region=${REGION_TO_DEPLOY}'  -auto-approve")                            
+                            sh("echo [END] Terraform apply")
+                        }
+                    } 
+                }
+            }
+        }
+        
+    }
+}
+
+
+def get_terraform_docker() {
+    def terraformDocker = "125277160566.dkr.ecr.us-east-1.amazonaws.com/anderson/devops/terraform"
+    return terraformDocker
+}
+def get_sts_assume_role(def aws_account) {
+    command_sts="aws sts assume-role --role-arn arn:aws:iam::${aws_account}:role/ec2_role --role-session-name JenkinsSlavesRole"
+    result_command_sts = sh(script: command_sts, returnStdout:true).trim()
+    echo "se ejecuto";
+    return result_command_sts
+}
+def jsonTextToObject(jsonText) {
+ def response_sts = new JsonSlurperClassic().parseText(jsonText)
+ return response_sts
+}
+def getConfEnvAWS(region, accessKeyId, secretAccessKey, sessionToken) {
+    env.AWS_DEFAULT_REGION = "${region}"
+    env.AWS_ACCESS_KEY_ID = "${accessKeyId}"
+    env.AWS_SECRET_ACCESS_KEY = "${secretAccessKey}"
+    env.AWS_SESSION_TOKEN = "${sessionToken}"
+}

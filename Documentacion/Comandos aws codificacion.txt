@@ -1,0 +1,36 @@
+//Luego de tener la cuenta correctamente enlazada al usuario se ejecutan los siguientes comandos:
+
+//Se envia a ZIP los archivos de la lambda, se debe tener cuidado con la ruta del archivo, se coloca
+//en esta carpeta porque es de documentacion
+
+zip /main.zip main.js config.json
+
+//Se crea el bucket que tendra los archivos y informacion de despliegue
+aws s3api create-bucket --bucket=pruebaDevops --region=us-east-1
+
+
+//Se sube el archivo ZIP al bucket
+aws s3 cp example.zip s3://pruebaDevops/v1.0.0/main.zip
+
+
+//Se deben agregar los datos para la conectividad a la cuenta de aws 
+//aws access key id and secret access key
+
+
+
+//Luego de configurado se debe ejecutar el comando que inicia el terraform
+terraform init
+
+
+//Es opcional ejecutar el terraform plan "nos sirve para identificar cual sera el cambio a ejecutar"
+terraform plan
+
+
+//Se debe ejecutar el terraform apply para que se realice el cambio en la cuenta
+terraform apply
+
+
+//Luego de eso ya se podra evidenciar en la cuenta el api y la lambda realizando el procedimiento
+//especifico
+
+
