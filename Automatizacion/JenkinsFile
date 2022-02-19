@@ -133,7 +133,7 @@ def get_terraform_docker() {
     return terraformDocker
 }
 def get_sts_assume_role(def aws_account) {
-    command_sts="aws sts assume-role --role-arn arn:aws:iam::${aws_account}:role/ec2_role --role-session-name JenkinsSlavesRole"
+    command_sts="aws sts assume-role --role-arn arn:aws:iam::125277160566:role/ec2_role --role-session-name JenkinsSlavesRole"
     result_command_sts = sh(script: command_sts, returnStdout:true).trim()
     echo "se ejecuto";
     return result_command_sts
